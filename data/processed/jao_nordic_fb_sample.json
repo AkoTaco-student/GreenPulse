@@ -1,0 +1,92 @@
+{
+  "source": "JAO Nordic Publication Tool / Nordic RCC (Fase 0 Fixture)",
+  "source_url": "https://publicationtool.jao.eu/nordic/",
+  "methodology": "Nordic flow-based CNEC RAM and PTDF",
+  "projection": "NO1-NO5 with Nordic CCR virtual interconnectors",
+  "delivery_start_utc": "2026-11-18T10:00:00Z",
+  "delivery_end_utc": "2026-11-18T10:15:00Z",
+  "unit": "MW",
+  "tolerance_mw": 10.0,
+  "constraints": [
+    {
+      "constraint_id": "CNEC_NO1_NO3_HASLE",
+      "cnec_name": "Hasle - Borgvik 420 kV [Statnett]",
+      "tso": "STATNETT",
+      "contingency": "N-1 Line Borgvik",
+      "fmax_mw": 2200.0,
+      "ram_mw": 1450.0,
+      "ptdf": {
+        "NO1": 0.28,
+        "NO2": 0.05,
+        "NO3": -0.32,
+        "NO4": -0.12,
+        "NO5": 0.08
+      },
+      "shadow_price_eur_per_mw": 0.0
+    },
+    {
+      "constraint_id": "CNEC_NO3_NO4_AURA",
+      "cnec_name": "Aura - Viklandet 420 kV [Snitt Midt-Nord]",
+      "tso": "STATNETT",
+      "contingency": "N-1 Transf Viklandet",
+      "fmax_mw": 1800.0,
+      "ram_mw": 720.0,
+      "ptdf": {
+        "NO1": -0.05,
+        "NO2": -0.04,
+        "NO3": -0.42,
+        "NO4": 0.58,
+        "NO5": -0.06
+      },
+      "shadow_price_eur_per_mw": 4.25
+    },
+    {
+      "constraint_id": "CNEC_NO2_NK_NORDLINK",
+      "cnec_name": "Tonstad - Wilster 525 kV HVDC [NordLink]",
+      "tso": "STATNETT / TENNET",
+      "contingency": "Base Case",
+      "fmax_mw": 1400.0,
+      "ram_mw": 1400.0,
+      "ptdf": {
+        "NO1": 0.02,
+        "NO2": 0.43,
+        "NO3": 0.01,
+        "NO4": 0.0,
+        "NO5": 0.05
+      },
+      "shadow_price_eur_per_mw": 8.70
+    },
+    {
+      "constraint_id": "CNEC_NO5_NO1_DAGALI",
+      "cnec_name": "Dagali - Nore 300 kV [Vest-Øst snitt]",
+      "tso": "STATNETT",
+      "contingency": "N-1 Dagali",
+      "fmax_mw": 1600.0,
+      "ram_mw": 980.0,
+      "ptdf": {
+        "NO1": -0.35,
+        "NO2": -0.08,
+        "NO3": 0.02,
+        "NO4": 0.0,
+        "NO5": 0.41
+      },
+      "shadow_price_eur_per_mw": 0.0
+    },
+    {
+      "constraint_id": "CNEC_NO2_SK_KRISTIANSAND",
+      "cnec_name": "Kristiansand - Tjele (Skagerrak HVDC 1-4)",
+      "tso": "STATNETT / ENERGINET",
+      "contingency": "Base Case",
+      "fmax_mw": 1700.0,
+      "ram_mw": 1650.0,
+      "ptdf": {
+        "NO1": 0.03,
+        "NO2": 0.40,
+        "NO3": 0.0,
+        "NO4": 0.0,
+        "NO5": 0.04
+      },
+      "shadow_price_eur_per_mw": 2.10
+    }
+  ]
+}

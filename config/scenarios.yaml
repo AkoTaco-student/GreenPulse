@@ -1,0 +1,48 @@
+# Forhåndsdefinerte scenarioer for greenpulse Optimization Lab
+scenarios:
+  - id: "normal_base"
+    name: "Normal drift (Basisscenario)"
+    description: "Normale sesongtemperaturer, forventet etterspørsel, 100% nettkapasitet og historiske vannverdier."
+    demand_multiplier: 1.0
+    wind_multiplier: 1.0
+    hydro_value_shift_eur: 0.0
+    line_capacity_multiplier: 1.0
+
+  - id: "cold_snap_winter"
+    name: "Kald vinterdag (Høylast NO1 & NO2)"
+    description: "Kaldfront gir 25% økning i forbruk i Sør- og Øst-Norge. Forbindelser mot NO1 og NO2 presses mot grensen."
+    demand_multiplier: 1.0
+    demand_multipliers:
+      NO1: 1.25
+      NO2: 1.25
+    wind_multiplier: 0.6
+    hydro_value_shift_eur: 15.0
+    line_capacity_multiplier: 1.0
+
+  - id: "dry_year_low_inflow"
+    name: "Tørrår / Lav magasinfylling"
+    description: "Lite nedbør gir høye vannverdier i NO1, NO2 og NO5 (+30 EUR/MWh). Vannkraftprodusenter sparer vann."
+    demand_multiplier: 1.0
+    wind_multiplier: 1.0
+    hydro_value_shift_eur: 30.0
+    hydro_areas: ["NO1", "NO2", "NO5"]
+    line_capacity_multiplier: 1.0
+
+  - id: "cable_outage_nordlink"
+    name: "Utenlandskabel utfall (NordLink 1400 MW nede)"
+    description: "Overføringskapasitet fra NO2 mot Tyskland settes til 0. Kraftoverskudd må håndteres internt i Norden."
+    demand_multiplier: 1.0
+    wind_multiplier: 1.0
+    hydro_value_shift_eur: -5.0
+    line_capacity_multiplier: 1.0
+    interconnector_overrides:
+      HVDC_NordLink: 0.0
+
+  - id: "grid_congestion_no1_no2"
+    name: "Flaskehals — strammere flow-based domene"
+    description: "Illustrativ markedssensitivitet: publisert RAM reduseres med 20% for alle CNECs. Dette er ikke en påstand om at en bestemt fysisk NO1–NO2-ledning har denne grensen."
+    demand_multiplier: 1.0
+    wind_multiplier: 1.0
+    hydro_value_shift_eur: 0.0
+    ram_multiplier: 0.8
+    line_capacity_multiplier: 1.0

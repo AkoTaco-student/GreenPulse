@@ -1,0 +1,16 @@
+{
+    "streams": [
+        {
+            "path": "/Users/akotaco/Power Market Analysis/greenpulse/core/cpp/forest.mkv",
+            "display_seconds": 60
+        },
+        {
+            "path": "/Users/akotaco/Power Market Analysis/greenpulse/core/cpp/waterfall.mkv",
+            "display_seconds": 60
+        }
+    ],
+    "display_seconds": 0,
+    "fullscreen": true,
+    "width": 1920,
+    "height": 1080
+}

@@ -1,0 +1,89 @@
+system:
+  name: "Norwegian Power Transmission Grid (NO1-NO5)"
+  base_mva: 100.0
+  frequency_hz: 50.0
+
+# IMPORTANT: lines below are legacy schematic DC assumptions only. Their
+# susceptance/capacity values are not verified Statnett transmission ratings.
+# Use the timestamped JAO Nordic flow-based CNEC/RAM/PTDF feed for the current
+# reduced NO1-NO5 dispatch: /api/grid/flow-based-domain.
+
+nodes:
+  - id: "NO1"
+    name: "Øst-Norge (Oslo)"
+    base_kv: 420.0
+  - id: "NO2"
+    name: "Sør-Norge (Kristiansand)"
+    base_kv: 420.0
+  - id: "NO3"
+    name: "Midt-Norge (Trondheim)"
+    base_kv: 420.0
+  - id: "NO4"
+    name: "Nord-Norge (Tromsø)"
+    base_kv: 420.0
+  - id: "NO5"
+    name: "Vest-Norge (Bergen)"
+    base_kv: 420.0
+
+lines:
+  # Interne forbindelser mellom norske budområder
+  - id: "L_NO1_NO2"
+    from_node: "NO1"
+    to_node: "NO2"
+    capacity_mw: 2200.0
+    reactance_pu: 0.045
+    resistance_pu: 0.005
+    susceptance_b: 22.22
+  - id: "L_NO1_NO3"
+    from_node: "NO1"
+    to_node: "NO3"
+    capacity_mw: 1000.0
+    reactance_pu: 0.060
+    resistance_pu: 0.006
+    susceptance_b: 16.67
+  - id: "L_NO1_NO5"
+    from_node: "NO1"
+    to_node: "NO5"
+    capacity_mw: 1200.0
+    reactance_pu: 0.055
+    resistance_pu: 0.005
+    susceptance_b: 18.18
+  - id: "L_NO2_NO5"
+    from_node: "NO2"
+    to_node: "NO5"
+    capacity_mw: 1500.0
+    reactance_pu: 0.050
+    resistance_pu: 0.005
+    susceptance_b: 20.00
+  - id: "L_NO3_NO4"
+    from_node: "NO3"
+    to_node: "NO4"
+    capacity_mw: 1200.0
+    reactance_pu: 0.070
+    resistance_pu: 0.007
+    susceptance_b: 14.28
+  - id: "L_NO3_NO5"
+    from_node: "NO3"
+    to_node: "NO5"
+    capacity_mw: 600.0
+    reactance_pu: 0.080
+    resistance_pu: 0.008
+    susceptance_b: 12.50
+
+interconnectors:
+  - id: "HVDC_NordLink"
+    area: "NO2"
+    connected_to: "DE (Tyskland)"
+    capacity_mw: 1400.0
+  - id: "HVDC_NorNed"
+    area: "NO2"
+    connected_to: "NL (Nederland)"
+    capacity_mw: 700.0
+  - id: "HVDC_NSL"
+    area: "NO2"
+    connected_to: "GB (Storbritannia)"
+    capacity_mw: 1400.0
+  - id: "HVDC_Skagerrak"
+    area: "NO2"
+    connected_to: "DK1 (Danmark)"
+    capacity_mw: 1700.0

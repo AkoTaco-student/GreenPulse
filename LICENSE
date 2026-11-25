@@ -1,0 +1,20 @@
+Copyright (c) [2026] [Akos Nagy]. All Rights Reserved.
+
+1. Ownership and Reservation of Rights
+This software and its associated documentation files (the "Software") are the proprietary property of [Your Name or Company Name]. All rights, title, and interest in and to the Software are expressly reserved.
+
+2. Permitted Viewing on GitHub
+You are permitted to view the Software on GitHub and fork this repository solely as allowed under the GitHub Terms of Service. No other rights or licenses are granted to you, whether expressly, by implication, or otherwise.
+
+3. Restrictions
+Except as expressly permitted in Section 2, you may not:
+(a) copy, reproduce, or download the Software for any purpose other than personal, non-commercial inspection;
+(b) modify, adapt, translate, or create derivative works based on the Software;
+(c) distribute, publish, sublicense, lease, rent, loan, or transfer the Software to any third party; or
+(d) use the Software, in whole or in part, for any commercial purpose or production deployment without prior written permission from [Your Name or Company Name].
+
+4. Third-Party Components
+The Software may interface with or include third-party libraries (such as the HiGHS optimization solver) that are governed by their own separate licenses. Any use of third-party solvers (such as MOSEK) requires you to obtain your own valid license directly from the respective vendor.
+
+5. Disclaimer of Warranty and Limitation of Liability
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,11 @@
+# Archived fixed-demand assumptions from the previous five-area baseline.
+# Retained only for the legacy pedagogical DC endpoint during migration.
+# These are NOT live ENTSO-E/Statnett measurements and must not feed the primary JAO/CVXPY route.
+provenance: LEGACY_ASSUMPTIONS_NOT_OBSERVED
+unit: MW
+areas:
+  NO1: 3800.0
+  NO2: 3400.0
+  NO3: 2200.0
+  NO4: 1800.0
+  NO5: 2100.0

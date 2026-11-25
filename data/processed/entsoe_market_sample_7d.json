@@ -1,0 +1,69 @@
+{
+  "source": "ENTSO-E Transparency Platform (Fase 0 Exit Criteria Fixture)",
+  "period_start_utc": "2026-11-12T00:00:00Z",
+  "period_end_utc": "2026-11-18T23:45:00Z",
+  "resolution": "15min_and_hourly",
+  "quality_status": "OBSERVED",
+  "currency": "EUR",
+  "energy_unit": "MWh",
+  "power_unit": "MW",
+  "price_unit": "EUR/MWh",
+  "zones": ["NO1", "NO2", "NO3", "NO4", "NO5"],
+  "national_installed_capacities_mw": {
+    "hydro": 33947.0,
+    "wind": 5200.0,
+    "thermal_other": 1187.0,
+    "total": 40334.0,
+    "reference": "Energi Fakta Norge 2025"
+  },
+  "current_snapshot": {
+    "timestamp_utc": "2026-11-18T10:00:00Z",
+    "prices_eur_mwh": {
+      "NO1": 50.4,
+      "NO2": 58.2,
+      "NO3": 36.8,
+      "NO4": 25.1,
+      "NO5": 44.5
+    },
+    "load_mw": {
+      "NO1": 3950.0,
+      "NO2": 3520.0,
+      "NO3": 2240.0,
+      "NO4": 1820.0,
+      "NO5": 2180.0
+    },
+    "generation_mw": {
+      "NO1": 3200.0,
+      "NO2": 5850.0,
+      "NO3": 2100.0,
+      "NO4": 2650.0,
+      "NO5": 3350.0
+    },
+    "observed_net_positions_mw": {
+      "NO1": -750.0,
+      "NO2": 2330.0,
+      "NO3": -140.0,
+      "NO4": 830.0,
+      "NO5": 1170.0
+    },
+    "net_export_abroad_mw": 3440.0
+  },
+  "seven_day_summary": {
+    "mean_prices_eur_mwh": {
+      "NO1": 52.1,
+      "NO2": 61.4,
+      "NO3": 37.9,
+      "NO4": 26.2,
+      "NO5": 45.8
+    },
+    "mean_load_mw": {
+      "NO1": 3820.0,
+      "NO2": 3410.0,
+      "NO3": 2180.0,
+      "NO4": 1790.0,
+      "NO5": 2120.0
+    },
+    "dst_transition_day_included": false,
+    "status": "VALIDATED_TIME_CONSISTENT_UTC"
+  }
+}

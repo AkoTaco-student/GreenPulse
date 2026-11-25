@@ -1,0 +1,99 @@
+# Generatorressurser for norske budområder (NO1–NO5).
+# Hydro marginal costs are explicit educational water-value assumptions, not bids.
+# Aggregate min_mw values are zero unless a verified must-run profile is supplied;
+# arbitrary fleet minima can make this zonal LP artificially infeasible.
+# NO1 run-of-river is omitted until MTU-aligned availability/realized output exists.
+
+generators:
+  # NO1 - Øst-Norge
+  - id: "GEN_NO1_HYDRO"
+    node: "NO1"
+    fuel_type: "hydro_reservoir"
+    name: "NO1 Vannkraft Regulerbar"
+    capacity_mw: 2800.0
+    min_mw: 0.0
+    marginal_cost_eur: 42.0  # Modellert vannverdi
+  - id: "GEN_NO1_THERMAL"
+    node: "NO1"
+    fuel_type: "thermal_waste"
+    name: "NO1 Avfallsforbrenning / Fjernvarme"
+    capacity_mw: 350.0
+    min_mw: 0.0
+    marginal_cost_eur: 65.0
+
+  # NO2 - Sør-Norge (hovedmagasiner og kabler til Europa)
+  - id: "GEN_NO2_HYDRO_LARGE"
+    node: "NO2"
+    fuel_type: "hydro_reservoir"
+    name: "NO2 Stor Vannkraft (Sira-Kvina/Ulla-Førre)"
+    capacity_mw: 6800.0
+    min_mw: 0.0
+    marginal_cost_eur: 48.0  # Koblet mot europeisk alternativverdi
+  - id: "GEN_NO2_WIND"
+    node: "NO2"
+    fuel_type: "wind"
+    name: "NO2 Vindkraft"
+    capacity_mw: 950.0
+    min_mw: 0.0
+    marginal_cost_eur: 2.0
+
+  # NO3 - Midt-Norge
+  - id: "GEN_NO3_HYDRO"
+    node: "NO3"
+    fuel_type: "hydro_reservoir"
+    name: "NO3 Vannkraft Regulerbar"
+    capacity_mw: 3100.0
+    min_mw: 0.0
+    marginal_cost_eur: 36.0
+  - id: "GEN_NO3_WIND_FOSEN"
+    node: "NO3"
+    fuel_type: "wind"
+    name: "NO3 Fosen Vindkraft"
+    capacity_mw: 1050.0
+    min_mw: 0.0
+    marginal_cost_eur: 2.0
+
+  # NO4 - Nord-Norge
+  # Illustrative water-value offer ladder, not actual plant bids. Splitting the
+  # aggregate resource avoids forcing every NO4 MTU to clear at one fixed
+  # marginal cost. The assumptions are deliberately simple and editable.
+  - id: "GEN_NO4_HYDRO_BASE"
+    node: "NO4"
+    fuel_type: "hydro_reservoir"
+    name: "NO4 Hydro — base water-value block (assumption)"
+    capacity_mw: 500.0
+    min_mw: 0.0
+    marginal_cost_eur: 25.0
+  - id: "GEN_NO4_HYDRO_MID"
+    node: "NO4"
+    fuel_type: "hydro_reservoir"
+    name: "NO4 Hydro — mid water-value block (assumption)"
+    capacity_mw: 1500.0
+    min_mw: 0.0
+    marginal_cost_eur: 45.0
+  - id: "GEN_NO4_HYDRO_PEAK"
+    node: "NO4"
+    fuel_type: "hydro_reservoir"
+    name: "NO4 Hydro — peak water-value block (assumption)"
+    capacity_mw: 2500.0
+    min_mw: 0.0
+    marginal_cost_eur: 80.0
+  - id: "GEN_NO4_WIND"
+    node: "NO4"
+    fuel_type: "wind"
+    name: "NO4 Vindkraft"
+    capacity_mw: 800.0
+    min_mw: 0.0
+    marginal_cost_eur: 2.0
+
+  # NO5 - Vest-Norge
+  - id: "GEN_NO5_HYDRO"
+    node: "NO5"
+    fuel_type: "hydro_reservoir"
+    name: "NO5 Vestlandsk Vannkraft (Aurland/Sima)"
+    capacity_mw: 5200.0
+    min_mw: 0.0
+    marginal_cost_eur: 44.0
+
+parameters:
+  load_shed_penalty_eur: 3000.0  # VOLL (Value of Lost Load)

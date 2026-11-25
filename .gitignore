@@ -1,0 +1,32 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+.vscode
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+docs/
+# Web build/dependencies
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/
+# CMake generated files
+core/cpp/build/
+docker-compose.override.yml
+docker-compose.yml
+services/api/market_s.py
+.DS_Store
+services/api/stream.mkv
+services/api/forest.mkv
+services/api/waterfall.mkv
+rm -rf .git
+git init
+git remote add origin https://github.com/AkoTaco-student/GreenPulse.git
+
+git add .
+
+git commit -m "Initial version. Missing videoes. Next: Fixing qml map, including transmission lines, and modeling flaskehals and kaldfront"
+git push -u origin master -f
