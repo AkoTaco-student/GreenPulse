@@ -231,19 +231,23 @@ def fetch_day_uncached(
     total_rows_with_filter_meta: int | None = None
     skip = 0
     page_index = 0
+    current_page_size = max(1, page_size)
+    min_page_size = min(current_page_size, 2500)
+    max_total_pages = max(max_pages, 200)
 
-    while page_index < max_pages:
+    while page_index < max_total_pages:
+        if current_page_size == page_size and page_index >= max_pages:
+            break
         payload = request_json(
             domain_url,
-            {
-                "FromUtc": iso_z(start, milliseconds=True),
-                "ToUtc": iso_z(end, milliseconds=True),
-                "Skip": str(skip),
-                "Take": str(page_size),
+            {"FromUtc": iso_z(start, milliseconds=True),
+            "ToUtc": iso_z(end, milliseconds=True),
+            "Skip": str(skip),
+            "Take": str(current_page_size),
             },
             source_label=(
                 f"JAO Nordic finalComputation (delivery day "
-                f"{start.isoformat()} to {end.isoformat()}, page {page_index + 1})"
+                f"{start.isoformat()} to {end.isoformat()}, page {page_index + 1}, take {current_page_size})"
             ),
             timeout_seconds=timeout_seconds,
         )
@@ -304,7 +308,7 @@ def fetch_day_uncached(
         if expected_row_count is not None:
             if skip >= expected_row_count:
                 break
-        elif len(page_rows) < page_size:
+        elif len(page_rows) < current_page_size:
             break
 
     returned_row_count = len(all_rows)

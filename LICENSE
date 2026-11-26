@@ -14,7 +14,7 @@ Except as expressly permitted in Section 2, you may not:
 (d) use the Software, in whole or in part, for any commercial purpose or production deployment without prior written permission from [Your Name or Company Name].
 
 4. Third-Party Components
-The Software may interface with or include third-party libraries (such as the HiGHS optimization solver) that are governed by their own separate licenses. Any use of third-party solvers (such as MOSEK) requires you to obtain your own valid license directly from the respective vendor.
+The Software may interface with or include third-party libraries (such as the HiGHS and MOSEK optimization solver) that are governed by their own separate licenses. Any use of third-party solvers (such as MOSEK) requires you to obtain your own valid license directly from the respective vendor.
 
 5. Disclaimer of Warranty and Limitation of Liability
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

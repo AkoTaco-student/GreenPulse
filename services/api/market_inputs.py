@@ -154,7 +154,7 @@ def _day_ahead_publication_deadline_utc(delivery_day: date, document_type: str) 
     publication_day = delivery_day - timedelta(days=1)
     deadline_local = {
         "A44": time(13, 0),  # SDAC day-ahead prices (~12:45 CET)
-        "A65": time(12, 0),  # Day-ahead load forecast
+        "A65": time(10, 0),  # Day-ahead load forecast (2h before gate closure, EU Reg 543/2013)
         "A69": time(18, 0),  # Day-ahead wind/solar forecast
     }.get(document_type, time(18, 0))
     return datetime.combine(publication_day, deadline_local, tzinfo=OSLO_TZ).astimezone(timezone.utc)
@@ -273,16 +273,28 @@ def _query_document_uncached(
     for series in root.findall(".//{*}TimeSeries"):
         psr_type = series.findtext(".//{*}MktPSRType/{*}psrType") or series.findtext(".//{*}psrType") or ""
         unit_name = series.findtext(".//{*}quantity_Measure_Unit.name") or series.findtext(".//{*}unit") or "MAW"
+        curve_type = (series.findtext("{*}curveType") or series.findtext(".//{*}curveType") or "").strip().upper()
         for period in series.findall("{*}Period"):
             interval = period.find("{*}timeInterval")
             period_start_el = interval.find("{*}start") if interval is not None else None
+            period_end_el = interval.find("{*}end") if interval is not None else None
             resolution_el = period.find("{*}resolution")
             if period_start_el is None or not period_start_el.text or resolution_el is None:
                 continue
             period_start = _parse_utc(period_start_el.text)
+            period_end = _parse_utc(period_end_el.text) if period_end_el is not None and period_end_el.text else None
             step_minutes = {"PT15M": 15, "PT30M": 30, "PT60M": 60, "PT1H": 60}.get(resolution_el.text or "")
             if period_start is None or step_minutes is None:
                 continue
+
+            total_positions: int | None = None
+            if period_end is not None and period_end > period_start:
+                step_seconds = step_minutes * 60
+                span_seconds = int((period_end - period_start).total_seconds())
+                if span_seconds >= step_seconds:
+                    total_positions = span_seconds // step_seconds
+
+            parsed_points: list[tuple[int, float]] = []
             for point in period.findall("{*}Point"):
                 position_el = point.find("{*}position")
                 quantity_el = point.find("{*}quantity")
@@ -295,22 +307,37 @@ def _query_document_uncached(
                     continue
                 if position < 1 or not math.isfinite(value):
                     continue
-                records.append({
-                    "area": area,
-                    "timestamp": period_start + timedelta(minutes=step_minutes * (position - 1)),
-                    "value_mw": value,
-                    "interval_minutes": step_minutes,
-                    "psr_type": psr_type,
-                    "process_type": process_type,
-                    "document_type": document_type,
-                    "unit": unit_name,
-                    "quality_status": "PUBLISHED",
-                    "document_created_at_utc": published_at_utc,
-                    "document_id": document_id,
-                    "document_revision_number": document_revision,
-                    "retrieved_at_utc": retrieved_at,
-                    "published_at_utc": published_at_utc,
-                })
+                parsed_points.append((position, value))
+
+            parsed_points.sort(key=lambda item: item[0])
+            for idx, (position, value) in enumerate(parsed_points):
+                if curve_type == "A03":
+                    if idx + 1 < len(parsed_points):
+                        end_pos = parsed_points[idx + 1][0]
+                    elif total_positions is not None and total_positions >= position:
+                        end_pos = total_positions + 1
+                    else:
+                        end_pos = position + 1
+                else:
+                    end_pos = position + 1
+
+                for expanded_pos in range(position, end_pos):
+                    records.append({
+                        "area": area,
+                        "timestamp": period_start + timedelta(minutes=step_minutes * (expanded_pos - 1)),
+                        "value_mw": value,
+                        "interval_minutes": step_minutes,
+                        "psr_type": psr_type,
+                        "process_type": process_type,
+                        "document_type": document_type,
+                        "unit": unit_name,
+                        "quality_status": "PUBLISHED",
+                        "document_created_at_utc": published_at_utc,
+                        "document_id": document_id,
+                        "document_revision_number": document_revision,
+                        "retrieved_at_utc": retrieved_at,
+                        "published_at_utc": published_at_utc,
+                    })
     return records
 
 

@@ -198,47 +198,75 @@ def _query_area_uncached(area: str, day: date, token: str) -> list[dict[str, Any
     published_at_raw = root.findtext(".//{*}createdDateTime")
     parsed_pub = _parse_publication_dt(published_at_raw)
     published_at_utc = parsed_pub.isoformat().replace("+00:00", "Z") if parsed_pub else None
-    for period in root.findall(".//{*}Period"):
-        interval = period.find("{*}timeInterval")
-        start_el = interval.find("{*}start") if interval is not None else None
-        resolution_el = period.find("{*}resolution")
-        if start_el is None or not start_el.text or resolution_el is None:
-            continue
-        period_start = _timestamp(start_el.text)
-        resolution = resolution_el.text or "PT60M"
-        step_minutes = 15 if resolution == "PT15M" else 60 if resolution == "PT60M" else 0
-        if step_minutes == 0:
-            continue
-        for point in period.findall("{*}Point"):
-            position_el = point.find("{*}position")
-            amount_el = point.find("{*}price.amount")
-            if position_el is None or amount_el is None:
+    for series in root.findall(".//{*}TimeSeries"):
+        curve_type = (series.findtext("{*}curveType") or series.findtext(".//{*}curveType") or "").strip().upper()
+        for period in series.findall("{*}Period"):
+            interval = period.find("{*}timeInterval")
+            start_el = interval.find("{*}start") if interval is not None else None
+            end_el = interval.find("{*}end") if interval is not None else None
+            resolution_el = period.find("{*}resolution")
+            if start_el is None or not start_el.text or resolution_el is None:
                 continue
-            try:
-                position = int(position_el.text or "0")
-                price = float(amount_el.text or "nan")
-            except ValueError:
+            period_start = _timestamp(start_el.text)
+            period_end = _timestamp(end_el.text) if end_el is not None and end_el.text else None
+            resolution = resolution_el.text or "PT60M"
+            step_minutes = 15 if resolution == "PT15M" else 60 if resolution == "PT60M" else 0
+            if step_minutes == 0:
                 continue
-            if position < 1:
-                continue
-            timestamp = period_start + timedelta(minutes=step_minutes * (position - 1))
-            if not start <= timestamp < end:
-                continue
-            records.append({
-                "area": area,
-                "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
-                "price_eur_mwh": price,
-                "unit": "EUR/MWh",
-                "resolution_minutes": step_minutes,
-                "source": "ENTSO-E Transparency Platform",
-                "document_type": "A44",
-                "quality_status": "PUBLISHED",
-                "document_created_at_utc": document_created_at,
-                "document_id": document_id,
-                "document_revision_number": document_revision,
-                "retrieved_at_utc": retrieved_at,
-                "published_at_utc": published_at_utc,
-            })
+
+            total_positions: int | None = None
+            if period_end is not None and period_end > period_start:
+                step_seconds = step_minutes * 60
+                span_seconds = int((period_end - period_start).total_seconds())
+                if span_seconds >= step_seconds:
+                    total_positions = span_seconds // step_seconds
+
+            parsed_points: list[tuple[int, float]] = []
+            for point in period.findall("{*}Point"):
+                position_el = point.find("{*}position")
+                amount_el = point.find("{*}price.amount")
+                if position_el is None or amount_el is None:
+                    continue
+                try:
+                    position = int(position_el.text or "0")
+                    price = float(amount_el.text or "nan")
+                except ValueError:
+                    continue
+                if position < 1:
+                    continue
+                parsed_points.append((position, price))
+
+            parsed_points.sort(key=lambda item: item[0])
+            for idx, (position, price) in enumerate(parsed_points):
+                if curve_type == "A03":
+                    if idx + 1 < len(parsed_points):
+                        end_pos = parsed_points[idx + 1][0]
+                    elif total_positions is not None and total_positions >= position:
+                        end_pos = total_positions + 1
+                    else:
+                        end_pos = position + 1
+                else:
+                    end_pos = position + 1
+
+                for expanded_pos in range(position, end_pos):
+                    timestamp = period_start + timedelta(minutes=step_minutes * (expanded_pos - 1))
+                    if not start <= timestamp < end:
+                        continue
+                    records.append({
+                        "area": area,
+                        "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
+                        "price_eur_mwh": price,
+                        "unit": "EUR/MWh",
+                        "resolution_minutes": step_minutes,
+                        "source": "ENTSO-E Transparency Platform",
+                        "document_type": "A44",
+                        "quality_status": "PUBLISHED",
+                        "document_created_at_utc": document_created_at,
+                        "document_id": document_id,
+                        "document_revision_number": document_revision,
+                        "retrieved_at_utc": retrieved_at,
+                        "published_at_utc": published_at_utc,
+                    })
     return records
 
 

@@ -73,7 +73,7 @@ class OptimizationRequest(BaseModel):
     generator_availability: dict[str, float] = Field(default_factory=dict)
     wind_multiplier: float | None = None
     ram_multiplier: float = 1.0
-    solver: str = "HIGHS"
+    solver: str = "MOSEK"
 
 
 class PriceComparisonRequest(BaseModel):
@@ -270,7 +270,7 @@ def get_day_ahead_forecast_inputs(
     delivery_time: datetime,
     forecast_origin_utc: datetime | None = Query(default=None),
 ) -> dict[str, Any]:
-    """Inspect forecast-vintage input data for one requested MTU (no solver run)."""
+    #Inspect forecast-vintage input data for one requested MTU (no solver run).
     if delivery_time.tzinfo is None:
         raise HTTPException(status_code=422, detail="delivery_time må inneholde tidssone.")
     period = _delivery_period(delivery_time)
@@ -289,7 +289,7 @@ def get_day_ahead_forecast_inputs(
 
 @app.post("/api/optimization/day-ahead-forecast", status_code=202)
 def start_day_ahead_forecast(request: DayAheadForecastRequest) -> dict[str, Any]:
-    """Queue paired 15-minute day-ahead LPs for the full Oslo delivery day."""
+    #Queue paired 15-minute day-ahead LPs for the full Oslo delivery day.
     origin = request.forecast_origin_utc or default_forecast_origin(request.delivery_day)
     mode = request.mode.strip().upper()
     if mode not in {"FORECAST", "REPLAY"}:
@@ -303,7 +303,7 @@ def start_day_ahead_forecast(request: DayAheadForecastRequest) -> dict[str, Any]
             status_code=422,
             detail="Flaskehals is a legacy physical-line demonstration; it cannot safely override published JAO CNECs in the flow-based day-ahead model.",
         )
-    if request.scenario_id not in {"normal_base", "cold_snap_winter"}:
+    if request.scenario_id not in {"normal_base", "cold_snap_winter", "dry_year_low_inflow", "grid_congestion_no1_no2"}:
         raise HTTPException(status_code=422, detail=f"Scenario {request.scenario_id} is not implemented for day-ahead dispatch.")
     if mode == "FORECAST":
         try:
@@ -332,7 +332,7 @@ def start_day_ahead_forecast(request: DayAheadForecastRequest) -> dict[str, Any]
 
 @app.get("/api/optimization/day-ahead-forecast/jobs/{job_id}")
 def get_day_ahead_forecast_job(job_id: str) -> dict[str, Any]:
-    """Return in-process job status and the paired A/B result when complete."""
+    #Return in-process job status and the paired A/B result when complete.
     job = get_day_ahead_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Forecast job not found; in-memory jobs are lost on API restart.")

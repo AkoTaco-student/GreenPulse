@@ -14,7 +14,7 @@ import cvxpy as cp
 import numpy as np
 import yaml
 
-from models.dispatch.lp_common import marginal_price_eur_mwh
+#from models.dispatch.lp_common import marginal_price_eur_mwh
 from models.dispatch.cnec_constraints import build_cnec_matrix, market_cnec_rows, cnec_filter_summary
 from models.dispatch.jao_market_constraints import (
     add_jao_net_position_constraints, validate_jao_zone_set, price_taking_zones,
@@ -49,7 +49,7 @@ class FlowBasedDispatchLP:
         generator_available_capacity_mw: dict[str, float] | None = None,
         wind_multiplier: float = 1.0,
         ram_multiplier: float = 1.0,
-        solver: str = "HIGHS",
+        solver: str = "MOSEK",
     ) -> dict[str, Any]:
         """Solve one MTU using live time-aligned market inputs; never nominal loads."""
         zones = validate_jao_zone_set(
@@ -207,8 +207,8 @@ class FlowBasedDispatchLP:
         installed = cp.installed_solvers()
         solver_enum = getattr(cp, solver_name, None)
         if solver_enum is None or solver_name not in installed:
-            if "HIGHS" in installed:
-                solver_name, solver_enum = "HIGHS", cp.HIGHS
+            if "MOSEK" in installed:
+                solver_name, solver_enum = "MOSEK", cp.MOSEK
             else:
                 raise RuntimeError(f"Valgt solver {solver} er utilgjengelig; installert={installed}.")
         try:

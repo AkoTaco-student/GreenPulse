@@ -257,7 +257,10 @@ def run_both_day_ahead_models(
             # Persist a complete collection even when some MTUs are not ready.
             # The snapshot retains explicit per-MTU readiness and diagnostics,
             # so scenario changes can reuse inputs without rerunning upstream fetches.
-            if snapshot["collected_interval_count"] == snapshot["expected_interval_count"]:
+            if (
+                snapshot["collected_interval_count"] == snapshot["expected_interval_count"]
+                and snapshot.get("ready_interval_count", 0) > 0
+            ):
                 _save_replay_snapshot(delivery_day, snapshot)
     else:
         snapshot = None if refresh_inputs else _load_forecast_snapshot(delivery_day, origin)
@@ -271,7 +274,10 @@ def run_both_day_ahead_models(
                 )
         else:
             snapshot = collect_day_ahead_inputs(delivery_day, origin, max_workers=max_workers, mode=mode, progress_callback=progress_callback)
-            if snapshot["collected_interval_count"] == snapshot["expected_interval_count"]:
+            if (
+                snapshot["collected_interval_count"] == snapshot["expected_interval_count"]
+                and snapshot.get("ready_interval_count", 0) > 0
+            ):
                 _save_forecast_snapshot(delivery_day, origin, snapshot)
     collection_seconds = time.perf_counter() - collection_started
     cache_stats_after = _cache_stats()

@@ -39,7 +39,7 @@ class EconomicDispatchLP:
         line_capacity_overrides: Optional[Dict[str, float]] = None,
         wind_multiplier: float = 1.0,
         generator_availability: Optional[Dict[str, float]] = None,
-        solver: str = "HIGHS"
+        solver: str = "MOSEK"
     ) -> Dict[str, Any]:
         """
         Løser nodal DC Economic Dispatch med CVXPY.
@@ -163,7 +163,7 @@ class EconomicDispatchLP:
         # 5. Løs konveks optimering med valgt solver
         problem = cp.Problem(objective, constraints)
         
-        solver_enum = getattr(cp, solver, cp.HIGHS)
+        solver_enum = getattr(cp, solver, cp.MOSEK)
         try:
             if solver_enum not in cp.installed_solvers():
                 raise RuntimeError(f"Solver {solver} er ikke installert.")

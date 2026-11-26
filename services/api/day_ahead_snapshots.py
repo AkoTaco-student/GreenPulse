@@ -107,14 +107,14 @@ def _validate_snapshot(delivery_day: date, snapshot: dict[str, Any], *, origin: 
     if replay:
         if snapshot.get("collected_interval_count") != len(expected):
             return False
-        # A replay snapshot is reusable when the entire MTU timeline was
-        # collected, even if some MTUs are explicitly not ready for solving.
-        # Missing MTUs remain missing; caching must never fabricate values.
         if not all(isinstance(interval, dict) and isinstance(interval.get("ready"), bool) for interval in intervals):
             return False
         actual_ready_count = sum(interval["ready"] is True for interval in intervals)
+        if actual_ready_count == 0:
+            return False
         return snapshot.get("ready_interval_count") == actual_ready_count
-    return True
+    actual_ready_count = sum(isinstance(interval, dict) and interval.get("ready") is True for interval in intervals)
+    return actual_ready_count > 0
 
 
 def save_forecast_snapshot(delivery_day: date, origin: datetime, snapshot: dict[str, Any]) -> Path:

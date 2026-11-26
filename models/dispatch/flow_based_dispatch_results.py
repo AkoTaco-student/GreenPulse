@@ -244,7 +244,7 @@ def build_single_period_result(
     max_system_balance_residual = abs(sum(raw_net_positions.values()))
     max_jao_balance_residual = jao_balance_diagnostics["max_jao_net_position_residual_mw"]
     max_cnec_violation = max(0.0, raw_cnec_violation)
-    # HiGHS/CVXPY can leave a few kW of residual on a multi-GW LP. Use an
+    # MOSEK/CVXPY can leave a few kW of residual on a multi-GW LP. Use an
     # explicit 10 kW MW tolerance; the old 1 kW threshold mislabelled valid
     # optimal solutions as infeasible. JAO group/pair balances are checked too.
     feasibility_tolerance = 0.01

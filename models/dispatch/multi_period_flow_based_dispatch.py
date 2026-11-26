@@ -20,7 +20,7 @@ import cvxpy as cp
 import numpy as np
 import yaml
 
-from models.dispatch.lp_common import marginal_price_eur_mwh
+#from models.dispatch.lp_common import marginal_price_eur_mwh
 from models.dispatch.cnec_constraints import build_cnec_matrix, market_cnec_rows, cnec_filter_summary
 from models.dispatch.jao_market_constraints import (
     add_jao_net_position_constraints,
@@ -66,7 +66,7 @@ class MultiPeriodFlowBasedDispatchLP:
         *,
         daily_hydro_energy_budget_mwh: dict[str, float] | None = None,
         generator_availability_by_mtu: list[dict[str, float]] | None = None,
-        solver: str = "HIGHS",
+        solver: str = "MOSEK",
         delta_t_h: float = 0.25,
         feasibility_tolerance: float = 0.01,
         hydro_budget_tolerance_mwh: float = 0.01,
@@ -303,8 +303,8 @@ class MultiPeriodFlowBasedDispatchLP:
         installed = cp.installed_solvers()
         solver_enum = getattr(cp, solver_name, None)
         if solver_enum is None or solver_name not in installed:
-            if "HIGHS" in installed:
-                solver_name, solver_enum = "HIGHS", cp.HIGHS
+            if "MOSEK" in installed:
+                solver_name, solver_enum = "MOSEK", cp.MOSEK
             else:
                 raise RuntimeError(f"Requested solver {solver} unavailable; installed={installed}.")
         solve_started = time.perf_counter()

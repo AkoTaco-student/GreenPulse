@@ -25,7 +25,7 @@ def solve_approach_a(
     intervals: list[dict[str, Any]],
     *,
     engine: FlowBasedDispatchLP | None = None,
-    solver: str = "HIGHS", # can swap to MOSEK
+    solver: str = "MOSEK", # can swap to MOSEK
 ) -> dict[str, Any]:
     """Approach A: independent flow-based LP for each 15-minute MTU."""
     if not intervals:
@@ -107,7 +107,7 @@ def solve_approach_b(
     *,
     daily_hydro_energy_budget_mwh: dict[str, float] | None = None,
     engine: MultiPeriodFlowBasedDispatchLP | None = None,
-    solver: str = "HIGHS",
+    solver: str = "MOSEK",
 ) -> dict[str, Any]:
     """Approach B: one coupled multi-period LP with an aggregate hydro budget."""
     if not intervals:
