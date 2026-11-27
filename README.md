@@ -3,6 +3,7 @@
 GreenPulse is a student project exploring **Nordic electricity-market modelling**. It combines market data, flow-based constraints and linear optimization in a small desktop application.
 
 ![GreenPulse dashboard](images/kaldfront.png)
+![GreenPulse dashboard](images/image.png)
 
 ## What it does
 
