@@ -15,7 +15,9 @@ import yaml
 
 from models.dispatch.day_ahead_forecast import solve_approach_a, solve_approach_b
 from models.grid.flow_based_domain import flow_based_cache_stats
-from services.api.forecast_calendar import default_forecast_origin, delivery_periods, validate_pre_auction_origin
+from services.api.forecast_calendar import (
+    default_forecast_origin, delivery_periods, oslo_today, validate_pre_auction_origin,
+)
 from services.api.market_inputs import (
     market_input_cache_stats,
 )
@@ -191,14 +193,45 @@ def _solve_b(ready: list[dict[str, Any]], hydro: dict[str, Any] | None = None, p
     }
 
 
+def _interconnector_state(area: str, interval: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """HVDC/AC interconnector virtual zones attached to `area` (e.g. NO2_SK, NO2_NK, NO2_ND).
+
+    net_position_mw is the modelled flow out of the Norwegian area on that link
+    (export positive). `binding_cnec` is the JAO allocation constraint
+    (AC_Maximum_<zone>/AC_Minimum_<zone>) with a positive dual in this MTU, if any.
+    """
+    net_positions = interval.get("net_positions_mw") or {}
+    binding = (interval.get("cnec_diagnostics") or {}).get("binding_cnecs") or []
+    state: dict[str, dict[str, Any]] = {}
+    for zone, value in net_positions.items():
+        if not zone.startswith(f"{area}_") or value is None:
+            continue
+        hit = next(
+            (c for c in binding
+             if c.get("cnec_type") == "ALLOCATION_CONSTRAINT"
+             and str(c.get("cnec_name", "")).endswith(f"_{zone}")),
+            None,
+        )
+        state[zone] = {
+            "net_position_mw": float(value),
+            "binding_cnec": hit.get("cnec_name") if hit else None,
+            "shadow_price_eur_per_mw": hit.get("shadow_price_eur_per_mw") if hit else None,
+        }
+    return state
+
+
 def _price_records(model: str, result: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     records = []
     replay = snapshot.get("mode") == "REPLAY"
+    expected_periods = delivery_periods(date.fromisoformat(snapshot["delivery_day_local"]))
+    day_start_utc = _utc(expected_periods[0])
+    day_end_utc = _utc(expected_periods[-1] + MTU)
     for interval in result.get("intervals", []):
         if interval.get("feasible") is False:
             continue
         timestamp = interval.get("delivery_start_utc")
         prices = interval.get("nodal_marginal_prices_eur_mwh") or interval.get("nodal_marginal_prices") or {}
+        net_positions = interval.get("net_positions_mw") or {}
         for area in AREAS:
             if timestamp and prices.get(area) is not None:
                 records.append({
@@ -214,6 +247,12 @@ def _price_records(model: str, result: dict[str, Any], snapshot: dict[str, Any])
                     "model_version": result.get("model_version"),
                     "forecast_origin_utc": snapshot["forecast_origin_utc"],
                     "delivery_day_local": snapshot["delivery_day_local"],
+                    "delivery_day_start_utc": day_start_utc,
+                    "delivery_day_end_utc": day_end_utc,
+                    "net_position_mw": (
+                        float(net_positions[area]) if net_positions.get(area) is not None else None
+                    ),
+                    "interconnectors": _interconnector_state(area, interval),
                 })
     return records
 
@@ -233,6 +272,8 @@ def run_both_day_ahead_models(
     mode = mode.upper()
     if mode not in {"FORECAST", "REPLAY"}:
         raise ValueError("mode must be FORECAST or REPLAY.")
+    if mode == "REPLAY" and delivery_day != oslo_today():
+        raise ValueError(f"REPLAY is only defined for today's Oslo delivery day ({oslo_today().isoformat()}).")
     scenario = _day_ahead_scenario(scenario_id)
     origin = forecast_origin_utc or default_forecast_origin(delivery_day)
     if origin.tzinfo is None:
@@ -390,8 +431,8 @@ def run_both_day_ahead_models(
         "warnings": [
             "B is the primary coupled model; A is used only for ready MTUs not covered by B.",
             f"Scenario assumptions applied: {scenario.get('name', scenario_id)}.",
-            "Wind is fixed to A75/A16 realized output in replay or capped by an A69/A01 MTU forecast; missing wind blocks the affected MTU.",
-            "REPLAY mode uses published or replay inputs, not an as-issued D-1 forecast." if mode == "REPLAY" else "Strict forecast mode requires publication-vintage checks.",
+            "Wind is capped by the A69/A01 day-ahead MTU forecast (realised A75/A16 is never a model input); missing wind blocks the affected MTU.",
+            "REPLAY uses today's published day-ahead inputs (JAO final computation, ENTSO-E A65/A01, A69/A01, A44) without vintage checks." if mode == "REPLAY" else "Strict forecast mode requires publication-vintage checks and an origin in 11:15-12:00 Oslo on D-1.",
         ],
     }
 

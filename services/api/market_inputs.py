@@ -535,20 +535,15 @@ def prefetch_replay_market_sources(
     if not delivery_times:
         return {"results": {}, "errors": {}, "timings": {"source_fetch_seconds": 0.0}}
     _, day = _single_oslo_day(delivery_times, "A replay source batch")
-    today = _oslo_today()
-    historical = day < today
-    needs_actual_wind = day <= today
     token = os.environ.get("ENTSOE_API_TOKEN", "").strip()
     jobs: dict[tuple[str, str], Callable[[], list[dict[str, Any]]]] = {}
+    # Day-ahead data basis only: A65/A01 load forecast, A69/A01 wind+solar
+    # forecast, A44 day-ahead prices. Realised A65/A16 load and A75/A16
+    # generation are never requested for the model inputs.
     for area in NO_AREAS:
-        jobs[("load_actual", area)] = lambda a=area: _query_document(a, day, "A65", "A16")
-        if not historical:
-            jobs[("load_forecast", area)] = lambda a=area: _query_document(a, day, "A65", "A01")
+        jobs[("load_forecast", area)] = lambda a=area: _query_document(a, day, "A65", "A01")
     for area in WIND_ZONES:
-        if not historical:
-            jobs[("renewable_forecast", area)] = lambda a=area: _query_document(a, day, "A69", "A01")
-        if needs_actual_wind:
-            jobs[("generation_actual", area)] = lambda a=area: _query_document(a, day, "A75", "A16")
+        jobs[("renewable_forecast", area)] = lambda a=area: _query_document(a, day, "A69", "A01")
     for area in ALL_BOUNDARY_AREAS:
         if area in AREA_EIC:
             jobs[("price", area)] = lambda a=area: _query_area(a, day, token)
@@ -557,7 +552,6 @@ def prefetch_replay_market_sources(
     return {
         "results": results,
         "errors": errors,
-        "historical_replay": historical,
         "timings": {"source_fetch_seconds": round(monotonic_time.perf_counter() - started, 6)},
     }
 
@@ -571,14 +565,12 @@ def _assemble_replay_mtu(
     include_generation_diagnostics: bool,
 ) -> dict[str, Any]:
     day = delivery_start.astimezone(OSLO_TZ).date()
-    oslo_today = _oslo_today()
-    historical_replay = day < oslo_today
-    collect_actual_generation = include_generation_diagnostics or day <= oslo_today
+    # A75/A16 realised generation is diagnostics-only; it is never fed to the model.
+    collect_actual_generation = include_generation_diagnostics
     required_price_areas, unmapped_zones = _boundary_areas_for_zones(cnec_zones)
     relevant_errors = {
-        *(f"load_actual:{area}" for area in NO_AREAS),
-        *(f"load_forecast:{area}" for area in NO_AREAS if not historical_replay),
-        *(f"renewable_forecast:{area}" for area in WIND_ZONES if not historical_replay),
+        *(f"load_forecast:{area}" for area in NO_AREAS),
+        *(f"renewable_forecast:{area}" for area in WIND_ZONES),
         *(f"generation_actual:{area}" for area in WIND_ZONES if collect_actual_generation),
         *(f"price:{area}" for area in required_price_areas),
     }
@@ -593,10 +585,7 @@ def _assemble_replay_mtu(
     observed_generation: dict[str, list[dict[str, Any]]] = {}
 
     for zone in NO_AREAS:
-        chosen = _select_covering_record(results.get(("load_actual", zone), []), delivery_start)
-        is_actual = chosen is not None
-        if chosen is None and not historical_replay:
-            chosen = _select_covering_record(results.get(("load_forecast", zone), []), delivery_start)
+        chosen = _select_covering_record(results.get(("load_forecast", zone), []), delivery_start)
         if chosen is not None:
             available, _ = _available_at_timestamp(chosen, delivery_start, delivery_day=day)
             demand_mw[zone] = float(chosen["value_mw"])
@@ -606,7 +595,7 @@ def _assemble_replay_mtu(
                 "resolution_minutes": int(chosen["interval_minutes"]),
                 "document_type": "A65",
                 "process_type": chosen["process_type"],
-                "quality_status": "OBSERVED_ACTUAL" if is_actual else "PUBLISHED_FORECAST",
+                "quality_status": "PUBLISHED_FORECAST",
                 "published_at_utc": chosen.get("published_at_utc"),
                 "retrieved_at_utc": chosen.get("retrieved_at_utc"),
                 "available_at_delivery_start": available,
@@ -649,7 +638,7 @@ def _assemble_replay_mtu(
                 },
             }
 
-        # Actual Generation (A75/A16)
+        # Diagnostics only (A75/A16): reported, never used as a fixed injection.
         gen_records = results.get(("generation_actual", zone), [])
         observed_generation[zone] = [
             {
@@ -663,11 +652,6 @@ def _assemble_replay_mtu(
             for rec in gen_records
             if rec["timestamp"] <= delivery_start < rec["timestamp"] + timedelta(minutes=int(rec["interval_minutes"]))
         ]
-        wind_gen = [item for item in observed_generation[zone] if item["psr_type"] in WIND_PSR_TYPES]
-        if wind_gen and zone in WIND_GENERATOR_BY_ZONE:
-            fixed_generation_mw_by_generator[WIND_GENERATOR_BY_ZONE[zone]] = sum(
-                float(item["generation_mw"]) for item in wind_gen
-            )
 
     for zone, generator_id in WIND_GENERATOR_BY_ZONE.items():
         wind_forecast = renewable_forecast_mw.get(zone, {}).get("wind")
@@ -762,16 +746,8 @@ def _assemble_replay_mtu(
         "forecast_origin_usable_at_mtu_start": not warnings,
         "forecast_origin_warnings": warnings,
         "source_errors": filtered_errors,
-        "load_policy": (
-            "A65_A16_REALIZED_LOAD_ONLY"
-            if historical_replay
-            else "A65_A16_REALIZED_LOAD_PREFERRED_THEN_A65_A01_FORECAST"
-        ),
-        "generation_policy": (
-            "HISTORICAL_REPLAY_A75_A16_REALIZED_WIND_FIXED_AS_INJECTION"
-            if historical_replay
-            else "A75_A16_REALIZED_WIND_FIXED_WHEN_AVAILABLE_OTHERWISE_A69_A01_AVAILABILITY_CEILING"
-        ),
+        "load_policy": "A65_A01_DAY_AHEAD_FORECAST_ONLY",
+        "generation_policy": "A69_A01_DAY_AHEAD_AVAILABILITY_CEILING_ONLY; A75_A16_NEVER_A_MODEL_INPUT",
         "missing_wind_policy": "BLOCK_SOLVE_NO_NAMEPLATE_CAPACITY_FALLBACK",
         "generation_diagnostics_included": collect_actual_generation,
     }
@@ -793,7 +769,7 @@ def fetch_flow_based_market_inputs_batch(
     source_seconds = float(
         sources.get("timings", {}).get("source_fetch_seconds", monotonic_time.perf_counter() - started)
     )
-    include_generation = day <= _oslo_today()
+    include_generation = False  # replay prefetch has no A75 jobs; diagnostics are single-MTU only
     output: dict[str, dict[str, Any]] = {}
     for period in periods:
         key = _format_utc_z(period)
@@ -830,18 +806,14 @@ def fetch_flow_based_market_inputs(
             return cached[1]
 
     day = delivery_start.astimezone(OSLO_TZ).date()
-    historical_replay = day < _oslo_today()
-    collect_actual_generation = include_generation_diagnostics or day <= _oslo_today()
+    collect_actual_generation = include_generation_diagnostics
     required_price_areas, _ = _boundary_areas_for_zones(cnec_zones)
     token = os.environ.get("ENTSOE_API_TOKEN", "").strip()
     jobs: dict[tuple[str, str], Callable[[], list[dict[str, Any]]]] = {}
     for zone in NO_AREAS:
-        jobs[("load_actual", zone)] = lambda z=zone: _query_document(z, day, "A65", "A16")
-        if not historical_replay:
-            jobs[("load_forecast", zone)] = lambda z=zone: _query_document(z, day, "A65", "A01")
+        jobs[("load_forecast", zone)] = lambda z=zone: _query_document(z, day, "A65", "A01")
     for zone in WIND_ZONES:
-        if not historical_replay:
-            jobs[("renewable_forecast", zone)] = lambda z=zone: _query_document(z, day, "A69", "A01")
+        jobs[("renewable_forecast", zone)] = lambda z=zone: _query_document(z, day, "A69", "A01")
         if collect_actual_generation:
             jobs[("generation_actual", zone)] = lambda z=zone: _query_document(z, day, "A75", "A16")
     for area in required_price_areas:

@@ -159,6 +159,13 @@ def fetch_hour_uncached(
         publication_metadata_complete = False
         last_modified_on_utc = None
 
+    page_timestamp_metadata_complete = len(page_last_modified_parsed) == page_index
+    page_timestamp_spread_seconds = (
+        (max(page_last_modified_parsed) - min(page_last_modified_parsed)).total_seconds()
+        if page_timestamp_metadata_complete and page_last_modified_parsed
+        else None
+    )
+
     records = normalize_records({"data": all_rows})
 
     return {
@@ -234,23 +241,43 @@ def fetch_day_uncached(
     current_page_size = max(1, page_size)
     min_page_size = min(current_page_size, 2500)
     max_total_pages = max(max_pages, 200)
+    page_size_reductions: list[dict[str, Any]] = []
 
     while page_index < max_total_pages:
+        # The configured page budget only applies at the configured page size;
+        # a reduced Take needs proportionally more pages.
         if current_page_size == page_size and page_index >= max_pages:
             break
-        payload = request_json(
-            domain_url,
-            {"FromUtc": iso_z(start, milliseconds=True),
-            "ToUtc": iso_z(end, milliseconds=True),
-            "Skip": str(skip),
-            "Take": str(current_page_size),
-            },
-            source_label=(
-                f"JAO Nordic finalComputation (delivery day "
-                f"{start.isoformat()} to {end.isoformat()}, page {page_index + 1}, take {current_page_size})"
-            ),
-            timeout_seconds=timeout_seconds,
-        )
+        try:
+            payload = request_json(
+                domain_url,
+                {"FromUtc": iso_z(start, milliseconds=True),
+                 "ToUtc": iso_z(end, milliseconds=True),
+                 "Skip": str(skip),
+                 "Take": str(current_page_size),
+                 },
+                source_label=(
+                    f"JAO Nordic finalComputation (delivery day "
+                    f"{start.isoformat()} to {end.isoformat()}, page {page_index + 1}, take {current_page_size})"
+                ),
+                timeout_seconds=timeout_seconds,
+            )
+        except RuntimeError as error:
+            # Fallback: JAO refused or timed out on a large response. Retry the
+            # SAME Skip offset with a 4x smaller Take (never below min_page_size).
+            # Rows already received stay valid, so pagination continues from `skip`.
+            if current_page_size <= min_page_size:
+                raise
+            reduced = max(min_page_size, current_page_size // 4)
+            page_size_reductions.append({
+                "page_index": page_index,
+                "skip": skip,
+                "from_take": current_page_size,
+                "to_take": reduced,
+                "reason": str(error)[:300],
+            })
+            current_page_size = reduced
+            continue
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise RuntimeError(
                 f"JAO finalComputation day response on page {page_index + 1} "
@@ -399,6 +426,8 @@ def fetch_day_uncached(
         "expected_row_count_source": expected_count_source,
         "total_rows": total_rows_meta,
         "total_rows_with_filter": total_rows_with_filter_meta,
+        "page_size_used": current_page_size,
+        "page_size_reductions": page_size_reductions,
         "normalized_record_count": len(normalized_records),
         "expected_mtu_count": expected_mtu_count,
         "mtus_with_records": len(records_by_mtu),

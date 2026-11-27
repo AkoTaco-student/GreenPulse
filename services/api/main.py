@@ -35,6 +35,7 @@ from services.api.market_inputs import fetch_flow_based_market_inputs, fetch_flo
 from services.api.forecast_calendar import (
     default_forecast_origin,
     next_oslo_delivery_day,
+    oslo_today,
     validate_pre_auction_origin,
 )
 from services.api.day_ahead_jobs import submit_day_ahead_job, get_day_ahead_job
@@ -83,18 +84,18 @@ class PriceComparisonRequest(BaseModel):
 class DayAheadForecastRequest(BaseModel):
     delivery_day: date = Field(
         default_factory=next_oslo_delivery_day,
-        description="Oslo-local delivery date (YYYY-MM-DD); defaults to tomorrow.",
+        description="Oslo-local delivery date (YYYY-MM-DD); defaults to tomorrow. Ignored for REPLAY, which always uses today.",
     )
     forecast_origin_utc: datetime | None = Field(
-        default=None, description="Information cutoff. Defaults to D-1 11:15 Europe/Oslo, before day-ahead gate closure."
+        default=None, description="Information cutoff for FORECAST; must lie in 11:15-12:00 Europe/Oslo on D-1 (default 11:15)."
     )
     daily_hydro_energy_budget_mwh: dict[str, float] = Field(
         default_factory=dict,
         description="Optional, explicitly scenario-labelled total usable hydro energy by NO zone (MWh); requires a complete delivery day.",
     )
     max_workers: int = Field(default=8, ge=1, le=12)
-    mode: str = Field(default="FORECAST", description="FORECAST for strict D-1 origin; REPLAY for ex-post or nowcast diagnostics.")
-    scenario_id: str = Field(default="normal_base", description="Supported day-ahead scenarios: normal_base and cold_snap_winter. Legacy line overrides do not modify JAO CNECs.")
+    mode: str = Field(default="FORECAST", description="FORECAST for tomorrow with a strict D-1 11:15-12:00 origin; REPLAY for today's delivery day with published day-ahead inputs.")
+    scenario_id: str = Field(default="normal_base", description="Supported day-ahead scenarios: normal_base, cold_snap_winter, dry_year_low_inflow (tørrår) and grid_congestion_no1_no2 (flaskehals: published RAM x0.8).")
     refresh_inputs: bool = Field(default=False, description="Ignore the persisted day snapshot; recent in-process source-cache entries may still be reused.")
 
 
@@ -270,7 +271,7 @@ def get_day_ahead_forecast_inputs(
     delivery_time: datetime,
     forecast_origin_utc: datetime | None = Query(default=None),
 ) -> dict[str, Any]:
-    #Inspect forecast-vintage input data for one requested MTU (no solver run).
+    """Inspect forecast-vintage input data for one requested MTU (no solver run)."""
     if delivery_time.tzinfo is None:
         raise HTTPException(status_code=422, detail="delivery_time må inneholde tidssone.")
     period = _delivery_period(delivery_time)
@@ -289,37 +290,34 @@ def get_day_ahead_forecast_inputs(
 
 @app.post("/api/optimization/day-ahead-forecast", status_code=202)
 def start_day_ahead_forecast(request: DayAheadForecastRequest) -> dict[str, Any]:
-    #Queue paired 15-minute day-ahead LPs for the full Oslo delivery day.
-    origin = request.forecast_origin_utc or default_forecast_origin(request.delivery_day)
+    """Queue paired 15-minute day-ahead LPs for the full Oslo delivery day."""
     mode = request.mode.strip().upper()
     if mode not in {"FORECAST", "REPLAY"}:
         raise HTTPException(status_code=422, detail="mode must be FORECAST or REPLAY.")
+    # REPLAY is always today's delivery day, whatever the client sent.
+    delivery_day = oslo_today() if mode == "REPLAY" else request.delivery_day
+    origin = request.forecast_origin_utc or default_forecast_origin(delivery_day)
     scenarios = {item.get("id"): item for item in _load_scenarios()}
     scenario = scenarios.get(request.scenario_id)
     if scenario is None:
         raise HTTPException(status_code=422, detail=f"Unknown day-ahead scenario: {request.scenario_id}")
-    if request.scenario_id == "grid_congestion_no1_no2":
-        raise HTTPException(
-            status_code=422,
-            detail="Flaskehals is a legacy physical-line demonstration; it cannot safely override published JAO CNECs in the flow-based day-ahead model.",
-        )
     if request.scenario_id not in {"normal_base", "cold_snap_winter", "dry_year_low_inflow", "grid_congestion_no1_no2"}:
         raise HTTPException(status_code=422, detail=f"Scenario {request.scenario_id} is not implemented for day-ahead dispatch.")
     if mode == "FORECAST":
         try:
-            origin = validate_pre_auction_origin(request.delivery_day, origin)
+            origin = validate_pre_auction_origin(delivery_day, origin)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
     if mode == "FORECAST" and datetime.now(timezone.utc) < origin:
         return {
             "status": "WAITING_FOR_FORECAST_ORIGIN",
-            "delivery_day_local": request.delivery_day.isoformat(),
+            "delivery_day_local": delivery_day.isoformat(),
             "forecast_origin_utc": origin.isoformat().replace("+00:00", "Z"),
             "mode": mode,
             "message": "The pre-auction information cutoff has not been reached. Submit a FORECAST again at or after the forecast origin, or use REPLAY for ex-post published inputs.",
         }
     job = submit_day_ahead_job(
-        request.delivery_day,
+        delivery_day,
         forecast_origin_utc=origin,
         daily_hydro_energy_budget_mwh=request.daily_hydro_energy_budget_mwh,
         scenario_id=request.scenario_id,
@@ -332,7 +330,7 @@ def start_day_ahead_forecast(request: DayAheadForecastRequest) -> dict[str, Any]
 
 @app.get("/api/optimization/day-ahead-forecast/jobs/{job_id}")
 def get_day_ahead_forecast_job(job_id: str) -> dict[str, Any]:
-    #Return in-process job status and the paired A/B result when complete.
+    """Return in-process job status and the paired A/B result when complete."""
     job = get_day_ahead_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Forecast job not found; in-memory jobs are lost on API restart.")

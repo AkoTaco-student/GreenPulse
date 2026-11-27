@@ -14,6 +14,91 @@ ApplicationWindow {
     property string selectedZone: "ALL"
     property real hoverTimestampMs: -1
 
+    property real nowMs: Date.now()
+    Timer {
+        interval: 30000; running: true; repeat: true
+        onTriggered: root.nowMs = Date.now()
+    }
+
+    // Chart/map window: the modelled delivery day when a model result exists
+    // (FORECAST = tomorrow), otherwise the observed ENTSO-E day.
+    function modelDayStartMs() {
+        const rows = backend.metadata.modelledPriceSeriesB || [];
+        const src = rows.length > 0 ? rows : (backend.metadata.modelledPriceSeriesA || []);
+        return src.length > 0 ? Date.parse(src[0].delivery_day_start_utc) : NaN;
+    }
+    function modelDayEndMs() {
+        const rows = backend.metadata.modelledPriceSeriesB || [];
+        const src = rows.length > 0 ? rows : (backend.metadata.modelledPriceSeriesA || []);
+        return src.length > 0 ? Date.parse(src[0].delivery_day_end_utc) : NaN;
+    }
+    function chartStartMs() {
+        const m = modelDayStartMs();
+        return Number.isFinite(m) ? m : Date.parse(backend.metadata.observedPriceDayStartUtc);
+    }
+    function chartEndMs() {
+        const m = modelDayEndMs();
+        return Number.isFinite(m) ? m : Date.parse(backend.metadata.observedPriceDayEndUtc);
+    }
+
+    // Modelled record for one area at the current MTU (Approach B, A fills gaps).
+    // Before the day starts the first MTU is used, after it ends the last one.
+    function modelledAtNow(areaId) {
+        const byTs = {};
+        const series = [backend.metadata.modelledPriceSeriesA || [], backend.metadata.modelledPriceSeriesB || []];
+        for (const rows of series)
+            for (const rec of rows)
+                if (rec.area === areaId) byTs[rec.timestamp_ms] = rec;
+        const keys = Object.keys(byTs).map(Number).sort(function(a, b) { return a - b; });
+        if (keys.length === 0) return null;
+        let pick = keys[0];
+        for (const k of keys) { if (k <= nowMs) pick = k; else break; }
+        return byTs[pick];
+    }
+
+    function displayedPrice(areaId) {
+        if (backend.metadata.dataSourceMode === "MODELLED") {
+            const rec = modelledAtNow(areaId);
+            if (rec) return Number(rec.price_eur_mwh);
+        }
+        return backend.metadata["price" + areaId];
+    }
+    function displayedAverage() {
+        let sum = 0, n = 0;
+        for (const a of ["NO1", "NO2", "NO3", "NO4", "NO5"]) {
+            if (!hasDisplayedPriceFor(a)) continue;
+            sum += displayedPrice(a); n++;
+        }
+        return n > 0 ? sum / n : 0;
+    }
+
+    // Latest Statnett physical flow per directed pair, then net per corridor.
+    // Direction convention assumed: Value is the flow Out -> In (see CHANGES.md).
+    function physicalCorridors() {
+        const latest = {};
+        for (const r of (backend.metadata.physicalFlows || [])) {
+            const inA = String(r.InAreaElspotId || r.in_area || "");
+            const outA = String(r.OutAreaElspotId || r.out_area || "");
+            const v = Number(r.Value !== undefined ? r.Value : r.value_mw);
+            const ts = Date.parse(r.MeasureDate || r.timestamp_utc);
+            if (!inA || !outA || !Number.isFinite(v)) continue;
+            const key = outA + ">" + inA;
+            if (!latest[key] || ts >= latest[key].ts) latest[key] = { out: outA, inn: inA, v: v, ts: ts };
+        }
+        const pairs = {};
+        let newest = 0;
+        for (const k in latest) {
+            const e = latest[k];
+            const a = e.out < e.inn ? e.out : e.inn;
+            const b = e.out < e.inn ? e.inn : e.out;
+            const id = a + "|" + b;
+            if (!pairs[id]) pairs[id] = { a: a, b: b, net: 0 };
+            pairs[id].net += (e.out === a) ? e.v : -e.v;   // positive = a -> b
+            if (Number.isFinite(e.ts)) newest = Math.max(newest, e.ts);
+        }
+        return { pairs: pairs, newestMs: newest };
+    }
+
     function selectChartZone(areaId) {
         selectedZone = areaId;
         priceCanvas.requestPaint();
@@ -329,96 +414,182 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 14
 
+                    // Repaint on any data change and on the 30 s "current MTU" tick.
+                    Connections { target: backend.metadata; function onChanged() { topologyCanvas.requestPaint(); } }
+                    Connections { target: root; function onNowMsChanged() { topologyCanvas.requestPaint(); } }
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+
                     onPaint: {
                         const ctx = getContext("2d");
                         ctx.clearRect(0, 0, width, height);
+                        ctx.textBaseline = "alphabetic";
 
-                        // Node-koordinater
+                        // Title strip
+                        ctx.textAlign = "left";
+                        ctx.fillStyle = "#e4efe9";
+                        ctx.font = "bold 12px Inter, sans-serif";
+                        ctx.fillText("NORDISK KRAFTFLYT · NO1–NO5", 4, 14);
+
                         const nodes = {
-                            "NO4": { x: width * 0.62, y: height * 0.16, name: "NO4 (Nord)", p: backend.metadata.priceNO4 },
-                            "NO3": { x: width * 0.52, y: height * 0.38, name: "NO3 (Midt)", p: backend.metadata.priceNO3 },
-                            "NO5": { x: width * 0.28, y: height * 0.62, name: "NO5 (Vest)", p: backend.metadata.priceNO5 },
-                            "NO1": { x: width * 0.62, y: height * 0.64, name: "NO1 (Øst)", p: backend.metadata.priceNO1 },
-                            "NO2": { x: width * 0.44, y: height * 0.86, name: "NO2 (Sør)", p: backend.metadata.priceNO2 },
+                            "NO4": { x: width * 0.62, y: height * 0.17 },
+                            "NO3": { x: width * 0.50, y: height * 0.38 },
+                            "NO5": { x: width * 0.25, y: height * 0.60 },
+                            "NO1": { x: width * 0.60, y: height * 0.62 },
+                            "NO2": { x: width * 0.42, y: height * 0.80 }
                         };
+                        const R = 30;
 
-                        // Linjer mellom noder
-                        const lines = [
-                            { id: "L_NO3_NO4", u: "NO4", v: "NO3", flow: backend.metadata.flowNO3_NO4 },
-                            { id: "L_NO1_NO3", u: "NO3", v: "NO1", flow: backend.metadata.flowNO1_NO3 },
-                            { id: "L_NO3_NO5", u: "NO3", v: "NO5", flow: backend.metadata.flowNO3_NO5 },
-                            { id: "L_NO1_NO5", u: "NO5", v: "NO1", flow: backend.metadata.flowNO1_NO5 },
-                            { id: "L_NO1_NO2", u: "NO1", v: "NO2", flow: backend.metadata.flowNO1_NO2 },
-                            { id: "L_NO2_NO5", u: "NO2", v: "NO5", flow: backend.metadata.flowNO2_NO5 }
-                        ];
-
-                        // Tegn linjer
-                        for (let l of lines) {
-                            const p1 = nodes[l.u];
-                            const p2 = nodes[l.v];
+                        function arrowHead(x, y, ang, size, color) {
+                            ctx.save();
+                            ctx.translate(x, y); ctx.rotate(ang);
                             ctx.beginPath();
-                            ctx.moveTo(p1.x, p1.y);
-                            ctx.lineTo(p2.x, p2.y);
-
-                            const binding = backend.metadata.lineIsBinding(l.id);
-                            const hasLineData = backend.metadata.hasModelledPrices
-                                && backend.metadata.lineCapacity(l.id) > 0;
-                            if (!hasLineData) {
-                                ctx.strokeStyle = "#3d4e44";
-                                ctx.lineWidth = 1.5;
-                                ctx.setLineDash([3, 5]);
-                            } else if (binding) {
-                                ctx.strokeStyle = "#a55850"; // Rød flaskehals
-                                ctx.lineWidth = 3.5;
-                                ctx.setLineDash([6, 4]);
-                            } else {
-                                ctx.strokeStyle = "#385246";
-                                ctx.lineWidth = 2.2;
-                                ctx.setLineDash([]);
-                            }
-                            ctx.stroke();
-                            const mx = (p1.x + p2.x) / 2;
-                            const my = (p1.y + p2.y) / 2;
-                            ctx.fillStyle = binding ? "#3d1b18" : "#1f2a24";
-                            ctx.fillRect(mx - 40, my - 10, 80, 20);
-                            ctx.strokeStyle = binding ? "#a55850" : "#3d4e44";
-                            ctx.strokeRect(mx - 40, my - 10, 80, 20);
-                            ctx.fillStyle = binding ? "#e88f86" : "#ffffff";
-                            ctx.font = "bold 9px Inter, sans-serif";
-                            ctx.textAlign = "center";
-                            const flowNum = Number(l.flow);
-                            const validFlow = hasLineData && !isNaN(flowNum);
-                            ctx.fillText(validFlow ? Math.abs(flowNum).toFixed(0) + " MW" : "—", mx, my + 4);
+                            ctx.moveTo(size, 0); ctx.lineTo(-size * 0.7, size * 0.65); ctx.lineTo(-size * 0.7, -size * 0.65);
+                            ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+                            ctx.restore();
+                        }
+                        function flowStyle(mw) {
+                            const m = Math.abs(mw);
+                            return { w: Math.min(7, 1.5 + m / 450), c: m < 1 ? "#3d4e44" : "#5f9c85" };
+                        }
+                        function tag(cx, cy, text, color) {
+                            ctx.font = "bold 10px Inter, sans-serif";
+                            const w = ctx.measureText(text).width + 12;
+                            ctx.fillStyle = "#161f1b"; ctx.fillRect(cx - w / 2, cy - 9, w, 18);
+                            ctx.strokeStyle = "#35463d"; ctx.lineWidth = 1; ctx.strokeRect(cx - w / 2, cy - 9, w, 18);
+                            ctx.fillStyle = color; ctx.textAlign = "center";
+                            ctx.fillText(text, cx, cy + 4);
                         }
 
-                        // Tegn noder
+                        const corridors = root.physicalCorridors();
+                        const haveFlows = Object.keys(corridors.pairs).length > 0;
+
+                        // Faint grid-skeleton so the map keeps its shape before data arrives.
+                        const skeleton = [["NO4","NO3"],["NO3","NO1"],["NO3","NO5"],["NO1","NO5"],["NO1","NO2"],["NO2","NO5"]];
+                        ctx.setLineDash([3, 6]); ctx.strokeStyle = "#26332c"; ctx.lineWidth = 1.2;
+                        for (const e of skeleton) {
+                            ctx.beginPath(); ctx.moveTo(nodes[e[0]].x, nodes[e[0]].y); ctx.lineTo(nodes[e[1]].x, nodes[e[1]].y); ctx.stroke();
+                        }
                         ctx.setLineDash([]);
-                        for (let k in nodes) {
-                            const n = nodes[k];
-                            ctx.beginPath();
-                            ctx.arc(n.x, n.y, 28, 0, Math.PI * 2);
-                            ctx.fillStyle = "#1e2622";
-                            ctx.fill();
-                            ctx.lineWidth = 2.5;
-                            const areaId = k;
-                            const areaHasPrice = hasDisplayedPriceFor(areaId);
-                            ctx.strokeStyle = areaHasPrice && (n.p > 50) ? "#b98e67" : "#526d60";
-                            ctx.stroke();
 
-                            ctx.fillStyle = "#8da99c";
-                            ctx.font = "bold 9px Inter, sans-serif";
-                            ctx.textAlign = "center";
-                            ctx.fillText(k, n.x, n.y - 6);
-
-                            ctx.fillStyle = "#ffffff";
-                            ctx.font = "bold 13px 'Plus Jakarta Sans', sans-serif";
-                            ctx.fillText(areaHasPrice ? n.p.toFixed(1) + " €" : "—", n.x, n.y + 10);
+                        // Foreign stubs (anchors by neighbouring country; unknown countries are skipped).
+                        const foreignAnchor = {
+                            "SE": { x: 0.95, y: 0.30 }, "FI": { x: 0.95, y: 0.08 }, "RU": { x: 0.96, y: 0.03 },
+                            "DK": { x: 0.12, y: 0.90 }, "NL": { x: 0.05, y: 0.76 }, "DE": { x: 0.30, y: 0.93 },
+                            "GB": { x: 0.04, y: 0.50 }, "LT": { x: 0.92, y: 0.92 }, "PL": { x: 0.80, y: 0.95 }
+                        };
+                        const foreignIndex = {};
+                        const domestic = [];
+                        for (const id in corridors.pairs) {
+                            const e = corridors.pairs[id];
+                            const aNO = e.a.indexOf("NO") === 0 && nodes[e.a];
+                            const bNO = e.b.indexOf("NO") === 0 && nodes[e.b];
+                            if (aNO && bNO) { domestic.push(e); continue; }
+                            if (!aNO && !bNO) continue;
+                            const noId = aNO ? e.a : e.b;
+                            const fId = aNO ? e.b : e.a;
+                            const anchor = foreignAnchor[fId.substring(0, 2)];
+                            if (!anchor) continue;
+                            const exportMw = aNO ? e.net : -e.net;        // positive = leaving Norway
+                            const k = fId.substring(0, 2);
+                            foreignIndex[k] = (foreignIndex[k] || 0) + 1;
+                            const ax = width * anchor.x, ay = height * anchor.y + (foreignIndex[k] - 1) * 24;
+                            const n = nodes[noId];
+                            const ang = Math.atan2(ay - n.y, ax - n.x);
+                            const sx = n.x + Math.cos(ang) * R, sy = n.y + Math.sin(ang) * R;
+                            const st = flowStyle(exportMw);
+                            ctx.strokeStyle = st.c; ctx.lineWidth = Math.max(1.2, st.w * 0.7); ctx.setLineDash([2, 4]);
+                            ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ax, ay); ctx.stroke(); ctx.setLineDash([]);
+                            const mx = (sx + ax) / 2, my = (sy + ay) / 2;
+                            const dir = exportMw >= 0 ? ang : ang + Math.PI;
+                            const tA = exportMw >= 0 ? 0.80 : 0.22;
+                            arrowHead(sx + (ax - sx) * tA, sy + (ay - sy) * tA, dir, 6, st.c);
+                            ctx.fillStyle = "#8da99c"; ctx.font = "bold 10px Inter, sans-serif";
+                            ctx.textAlign = ax > width * 0.5 ? "right" : "left";
+                            ctx.fillText(fId, ax > width * 0.5 ? ax : ax, ay - 6);
+                            tag(mx, my, Math.abs(exportMw).toFixed(0) + " MW", "#e4efe9");
                         }
-                    }
 
-                    Connections {
-                        target: backend.metadata
-                        function onChanged() { topologyCanvas.requestPaint(); }
+                        // Domestic corridors from Statnett physical flow.
+                        for (const e of domestic) {
+                            const p1 = nodes[e.a], p2 = nodes[e.b];
+                            const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                            const st = flowStyle(e.net);
+                            ctx.strokeStyle = st.c; ctx.lineWidth = st.w; ctx.setLineDash([]);
+                            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+                            const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+                            const dir = e.net >= 0 ? ang : ang + Math.PI;
+                            const tA = e.net >= 0 ? 0.66 : 0.34;
+                            arrowHead(p1.x + (p2.x - p1.x) * tA, p1.y + (p2.y - p1.y) * tA, dir, 7, st.c);
+                            tag(mx, my, Math.abs(e.net).toFixed(0) + " MW", "#e4efe9");
+                        }
+
+                        // Nodes: displayed price (current MTU in MODELLED mode) + modelled net position.
+                        const avg = root.displayedAverage();
+                        const modelled = backend.metadata.dataSourceMode === "MODELLED";
+                        const hvdc = [];
+                        let mtuMs = NaN;
+                        for (const k in nodes) {
+                            const n = nodes[k];
+                            const has = root.hasDisplayedPriceFor(k);
+                            const price = has ? root.displayedPrice(k) : NaN;
+                            const rec = root.modelledAtNow(k);
+                            const np = rec && rec.net_position_mw !== null && rec.net_position_mw !== undefined
+                                ? Number(rec.net_position_mw) : NaN;
+                            if (rec) mtuMs = Number(rec.timestamp_ms);
+
+                            const hot = has && avg > 0 && price > avg * 1.12;
+                            const cold = has && avg > 0 && price < avg * 0.88;
+                            ctx.beginPath(); ctx.arc(n.x, n.y, R, 0, Math.PI * 2);
+                            ctx.fillStyle = hot ? "#3a2420" : cold ? "#1c3328" : "#1e2622"; ctx.fill();
+                            ctx.lineWidth = 2.5;
+                            ctx.strokeStyle = hot ? "#c0705f" : cold ? "#5f9c85" : "#526d60"; ctx.stroke();
+
+                            ctx.textAlign = "center";
+                            ctx.fillStyle = "#8da99c"; ctx.font = "bold 10px Inter, sans-serif";
+                            ctx.fillText(k, n.x, n.y - 6);
+                            ctx.fillStyle = "#ffffff"; ctx.font = "bold 13px 'Plus Jakarta Sans', sans-serif";
+                            ctx.fillText(has ? price.toFixed(1) + " €" : "—", n.x, n.y + 11);
+                            if (Number.isFinite(np) && modelled) {
+                                ctx.font = "bold 10px Inter, sans-serif";
+                                ctx.fillStyle = np >= 0 ? "#7fbf9f" : "#d4a373";
+                                ctx.fillText((np >= 0 ? "▲ eksport " : "▼ import ") + Math.abs(np).toFixed(0) + " MW", n.x, n.y + R + 14);
+                            }
+                            const ic = rec ? rec.interconnectors : null;
+                            if (ic) for (const z in ic) hvdc.push({ zone: z, v: ic[z] });
+                        }
+
+                        // Modelled HVDC / allocation-constraint panel (bottom-left).
+                        if (modelled && hvdc.length > 0) {
+                            hvdc.sort(function(x, y) { return x.zone < y.zone ? -1 : 1; });
+                            const rowH = 15, boxW = 230, boxH = 22 + hvdc.length * rowH;
+                            const bx = 0, by = 24;
+                            ctx.fillStyle = "#141c18"; ctx.fillRect(bx, by, boxW, boxH);
+                            ctx.strokeStyle = "#2a3630"; ctx.strokeRect(bx, by, boxW, boxH);
+                            ctx.textAlign = "left"; ctx.fillStyle = "#8da99c"; ctx.font = "bold 9px Inter, sans-serif";
+                            ctx.fillText("MODELLERTE UTLANDSFORBINDELSER", bx + 8, by + 13);
+                            for (let i = 0; i < hvdc.length; i++) {
+                                const h = hvdc[i], v = h.v;
+                                const binding = v.binding_cnec !== null && v.binding_cnec !== undefined;
+                                ctx.fillStyle = binding ? "#e88f86" : "#c7d8cf"; ctx.font = "10px Inter, sans-serif";
+                                const sp = (binding && v.shadow_price_eur_per_mw !== null && v.shadow_price_eur_per_mw !== undefined)
+                                    ? "  λ " + Number(v.shadow_price_eur_per_mw).toFixed(1) : "";
+                                ctx.fillText((binding ? "● " : "○ ") + h.zone + "  " + Number(v.net_position_mw).toFixed(0) + " MW" + sp,
+                                             bx + 8, by + 28 + i * rowH);
+                            }
+                        }
+
+                        // Footer: data provenance
+                        ctx.textAlign = "left"; ctx.fillStyle = "#6f8a7d"; ctx.font = "9px Inter, sans-serif";
+                        const fmt = root.formatChartTime;
+                        const flowTxt = haveFlows && corridors.newestMs > 0
+                            ? "Linjer: Statnett fysisk flyt, siste måling " + fmt(corridors.newestMs)
+                            : "Linjer: venter på Statnett fysisk flyt";
+                        const mtuTxt = modelled && Number.isFinite(mtuMs)
+                            ? " · Noder: modell, MTU " + fmt(mtuMs) : " · Noder: observert ENTSO-E";
+                        ctx.fillText(flowTxt + mtuTxt, 0, height - 4);
+                        ctx.textAlign = "right";
+                        ctx.fillText("Tykkelse ∝ MW · pil = flytretning · ● = bindende JAO-grense", width, height - 4);
                     }
                 }
             }
@@ -620,8 +791,8 @@ ApplicationWindow {
                             const plotWidth = Math.max(1, width - left - right);
                             const plotHeight = Math.max(1, height - top - bottom);
 
-                            const startMs = Date.parse(backend.metadata.observedPriceDayStartUtc);
-                            const endMs = Date.parse(backend.metadata.observedPriceDayEndUtc);
+                            const startMs = root.chartStartMs();
+                            const endMs = root.chartEndMs();
                             const durationMs = endMs - startMs;
 
                             if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || durationMs <= 0) {
@@ -1051,8 +1222,8 @@ ApplicationWindow {
                                 const bottom = 25;
                                 const plotWidth = Math.max(1, width - left - right);
 
-                                const startMs = Date.parse(backend.metadata.observedPriceDayStartUtc);
-                                const endMs = Date.parse(backend.metadata.observedPriceDayEndUtc);
+                                const startMs = root.chartStartMs();
+                                const endMs = root.chartEndMs();
                                 const durationMs = endMs - startMs;
 
                                 if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || durationMs <= 0
@@ -1107,7 +1278,7 @@ ApplicationWindow {
                 property string area: ""
                 property real price: 0.0
                 property bool available: false
-                property real avgPrice: backend.metadata.systemPrice
+                property real avgPrice: root.displayedAverage()
                 width: 130
                 height: 70
                 radius: 8
@@ -1143,11 +1314,11 @@ ApplicationWindow {
                 }
             }
 
-            PricePill { area: "NO1 (Øst)"; price: backend.metadata.priceNO1; available: root.hasDisplayedPriceFor("NO1") }
-            PricePill { area: "NO2 (Sør)"; price: backend.metadata.priceNO2; available: root.hasDisplayedPriceFor("NO2") }
-            PricePill { area: "NO3 (Midt)"; price: backend.metadata.priceNO3; available: root.hasDisplayedPriceFor("NO3") }
-            PricePill { area: "NO4 (Nord)"; price: backend.metadata.priceNO4; available: root.hasDisplayedPriceFor("NO4") }
-            PricePill { area: "NO5 (Vest)"; price: backend.metadata.priceNO5; available: root.hasDisplayedPriceFor("NO5") }
+            PricePill { area: "NO1 (Øst)"; price: root.displayedPrice("NO1"); available: root.hasDisplayedPriceFor("NO1") }
+            PricePill { area: "NO2 (Sør)"; price: root.displayedPrice("NO2"); available: root.hasDisplayedPriceFor("NO2") }
+            PricePill { area: "NO3 (Midt)"; price: root.displayedPrice("NO3"); available: root.hasDisplayedPriceFor("NO3") }
+            PricePill { area: "NO4 (Nord)"; price: root.displayedPrice("NO4"); available: root.hasDisplayedPriceFor("NO4") }
+            PricePill { area: "NO5 (Vest)"; price: root.displayedPrice("NO5"); available: root.hasDisplayedPriceFor("NO5") }
 
             Rectangle {
                 width: 1

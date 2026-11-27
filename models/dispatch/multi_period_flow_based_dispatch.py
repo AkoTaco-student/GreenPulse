@@ -20,7 +20,7 @@ import cvxpy as cp
 import numpy as np
 import yaml
 
-#from models.dispatch.lp_common import marginal_price_eur_mwh
+from models.dispatch.lp_common import marginal_price_eur_mwh
 from models.dispatch.cnec_constraints import build_cnec_matrix, market_cnec_rows, cnec_filter_summary
 from models.dispatch.jao_market_constraints import (
     add_jao_net_position_constraints,
@@ -299,14 +299,14 @@ class MultiPeriodFlowBasedDispatchLP:
         )
         problem = cp.Problem(objective, constraints)
         model_build_seconds = time.perf_counter() - model_build_started
-        solver_name = str(solver).upper()
         installed = cp.installed_solvers()
-        solver_enum = getattr(cp, solver_name, None)
-        if solver_enum is None or solver_name not in installed:
-            if "MOSEK" in installed:
-                solver_name, solver_enum = "MOSEK", cp.MOSEK
-            else:
-                raise RuntimeError(f"Requested solver {solver} unavailable; installed={installed}.")
+        # Requested solver first; otherwise MOSEK, then HiGHS (listed in requirements.txt).
+        solver_name = next(
+            (name for name in (str(solver).upper(), "MOSEK", "HIGHS") if name in installed), None
+        )
+        if solver_name is None:
+            raise RuntimeError(f"Requested solver {solver} unavailable; installed={installed}.")
+        solver_enum = getattr(cp, solver_name)
         solve_started = time.perf_counter()
         try:
             problem.solve(solver=solver_enum)

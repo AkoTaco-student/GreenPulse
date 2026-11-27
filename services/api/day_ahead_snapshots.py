@@ -13,6 +13,9 @@ from typing import Any
 from services.api.forecast_calendar import delivery_periods
 
 CACHE_SCHEMA_VERSION = 3
+# Replay snapshots collected before the day-ahead-only change hold realised
+# A65/A16 load and A75/A16 wind. They carry no basis tag and are rejected.
+REPLAY_INPUT_BASIS = "DAY_AHEAD_ONLY_V1"
 _ROOT = Path(__file__).resolve().parents[2]
 _FORECAST_DIR = _ROOT / "data" / "processed" / "forecasts"
 
@@ -105,6 +108,8 @@ def _validate_snapshot(delivery_day: date, snapshot: dict[str, Any], *, origin: 
             return False
 
     if replay:
+        if snapshot.get("replay_input_basis") != REPLAY_INPUT_BASIS:
+            return False
         if snapshot.get("collected_interval_count") != len(expected):
             return False
         if not all(isinstance(interval, dict) and isinstance(interval.get("ready"), bool) for interval in intervals):
@@ -139,6 +144,7 @@ def save_replay_snapshot(delivery_day: date, snapshot: dict[str, Any]) -> Path:
     payload = dict(snapshot)
     payload["cache_schema_version"] = CACHE_SCHEMA_VERSION
     payload["mode"] = "REPLAY"
+    payload["replay_input_basis"] = REPLAY_INPUT_BASIS
     payload["delivery_day_local"] = delivery_day.isoformat()
     path = replay_snapshot_path(delivery_day)
     _atomic_write_gzip(path, payload)

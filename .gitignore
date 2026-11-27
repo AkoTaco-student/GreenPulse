@@ -19,7 +19,7 @@ docker-compose.override.yml
 docker-compose.yml
 services/api/market_s.py
 .DS_Store
-services/api/waterfall.mkv
+core/cpp/waterfall.mkv
 core/cpp/stream.mkv
-services/api/forest.mkv
+core/cpp/forest.mkv
 models/dispatch/temp*

@@ -41,14 +41,12 @@ void StatnettClient::fetchModelledDispatchForMode(const QString& scenarioId, con
     m_currentDayAheadScenario = scenarioId;
     m_currentDayAheadMode = mode;
 
-    const QDateTime marketStart = QDateTime::fromString(
-        m_latestTelemetry.observedPriceDayStartUtc, Qt::ISODateWithMs);
     const QTimeZone oslo(QByteArrayLiteral("Europe/Oslo"));
-    // Start independently of the market-price reply. The chart date is preferred;
-    // on cold start, today's Oslo date avoids waiting for the 60-second feed timer.
-    const QDate deliveryDate = marketStart.isValid()
-        ? marketStart.toTimeZone(oslo).date()
-        : QDateTime::currentDateTimeUtc().toTimeZone(oslo).date();
+    // REPLAY always models today's Oslo delivery day. FORECAST models tomorrow
+    // (D+1): the API holds the job in WAITING_FOR_FORECAST_ORIGIN until the
+    // 11:15-12:00 Oslo information window on D-1 opens.
+    const QDate todayOslo = QDateTime::currentDateTimeUtc().toTimeZone(oslo).date();
+    const QDate deliveryDate = (mode == QStringLiteral("FORECAST")) ? todayOslo.addDays(1) : todayOslo;
     startDayAheadForecast(deliveryDate, scenarioId, mode);
 }
 
@@ -137,6 +135,7 @@ void StatnettClient::onDayAheadSubmitReply(QNetworkReply* reply, const QString& 
     if (status == QStringLiteral("WAITING_FOR_FORECAST_ORIGIN")) {
         m_dayAheadRequestActive = false;
         m_dayAheadJobStartedUtc = QDateTime();
+        m_lastDayAheadAttemptUtc = QDateTime(); // allow re-submit once the 11:15 window opens
         m_latestTelemetry.sourceStatus = QStringLiteral("Forecast waiting for information cutoff %1")
             .arg(document.object().value(QStringLiteral("forecast_origin_utc")).toString());
         emit telemetryReceived(m_latestTelemetry);
